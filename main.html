@@ -2179,6 +2179,35 @@ html[data-theme="light"] .conn-child-row td { background: rgba(15, 23, 42, 0.018
 }
 .conn-actions, .conn-group-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .conn-close, .conn-block, .conn-route, .conn-delete { width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center; color: var(--faint); }
+.conn-unblock {
+  height: 25px;
+  padding: 0 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--success);
+  border: 1px solid rgba(var(--success-rgb), 0.2);
+  background: rgba(var(--success-rgb), 0.06);
+  font-size: 8px;
+  font-weight: 600;
+}
+.conn-unblock:hover { background: rgba(var(--success-rgb), 0.12); border-color: rgba(var(--success-rgb), 0.34); }
+.conn-unblock svg { width: 11px; height: 11px; }
+.conn-blocked-note {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  color: var(--danger);
+  border: 1px solid rgba(var(--danger-rgb), 0.18);
+  background: rgba(var(--danger-rgb), 0.06);
+  font-size: 7px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
 .conn-close:hover { color: var(--danger); background: rgba(var(--danger-rgb), 0.08); }
 .conn-block:hover { color: var(--warning); background: rgba(var(--warning-rgb), 0.08); }
 .conn-route:hover { color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
@@ -2220,15 +2249,23 @@ html[data-theme="light"] .conn-child-row td { background: rgba(15, 23, 42, 0.018
 .block-item-copy { flex: 1; min-width: 0; }
 .block-item-copy strong { display: block; font-size: 10px; font-weight: 600; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .block-item-copy span { display: block; margin-top: 2px; font-size: 8px; color: var(--faint); }
-.block-item-remove {
-  width: 27px; height: 27px;
-  flex: 0 0 27px;
+.block-item-allow {
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 8px;
   border-radius: 7px;
-  display: grid; place-items: center;
-  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+  border: 1px solid rgba(var(--success-rgb), 0.2);
+  background: rgba(var(--success-rgb), 0.06);
+  font-size: 8px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-.block-item-remove:hover { color: var(--danger); background: rgba(var(--danger-rgb), 0.08); }
-.block-item-remove svg { width: 13px; height: 13px; }
+.block-item-allow:hover { background: rgba(var(--success-rgb), 0.12); border-color: rgba(var(--success-rgb), 0.34); }
+.block-item-allow svg { width: 12px; height: 12px; }
 
 /* ============================================================
    Logs
@@ -4813,9 +4850,9 @@ function renderConnectionsPage() {
 
     <div class="card table-card">
       <div class="table-scroll">
-        <table class="data-table" style="min-width:1060px">
+        <table class="data-table" style="min-width:1100px">
           <thead><tr>
-            <th style="width:250px">主机</th><th style="width:84px">状态</th><th style="width:80px">网络</th><th style="width:170px">匹配规则</th><th>链路</th><th style="width:80px">上传</th><th style="width:90px">下载</th><th style="width:92px">时长</th><th style="width:92px"></th>
+            <th style="width:250px">主机</th><th style="width:84px">状态</th><th style="width:80px">网络</th><th style="width:170px">匹配规则</th><th>链路</th><th style="width:80px">上传</th><th style="width:90px">下载</th><th style="width:92px">时长</th><th style="width:116px"></th>
           </tr></thead>
           <tbody id="connections-body"></tbody>
         </table>
@@ -5250,6 +5287,8 @@ function groupConnections(items) {
 }
 function connectionGroupRowHtml(group, expanded) {
   const processes = [...group.processes].slice(0, 2).join(" · ");
+  const blockedEntries = groupBlockedEntries(group);
+  const groupBlocked = blockedEntries.length > 0;
   const identity = connectionIdentity(group.latestItem);
   const kindText = group.kind === "brand" || group.kind === "app"
     ? `${group.hostCount} 个域名`
@@ -5270,7 +5309,7 @@ function connectionGroupRowHtml(group, expanded) {
         <span class="group-chevron">${icon("chevronRight", 12)}</span>
         ${visual}
         <span class="conn-host-copy">
-          <span class="conn-host-title"><strong title="${escapeAttr(group.label)}">${escapeHtml(group.label)}</strong>${groupNote}</span>
+          <span class="conn-host-title"><strong title="${escapeAttr(group.label)}">${escapeHtml(group.label)}</strong>${groupBlocked ? `<span class="conn-blocked-note" title="${blockedEntries.length} 条禁止规则正在生效">已禁止</span>` : ""}${groupNote}</span>
           <span>${escapeHtml(subline)}</span>
         </span>
         <span class="conn-group-badge">${group.count}</span>
@@ -5288,7 +5327,9 @@ function connectionGroupRowHtml(group, expanded) {
     <td><span class="conn-duration" title="组内所有连接时长累计">${fmtDurationLong(group.durationTotal)}</span></td>
     <td><div class="conn-group-actions">
       <button class="conn-route" type="button" data-action="route-group" data-key="${escapeAttr(group.key)}" title="修改整个组合的流量走向" aria-label="修改 ${escapeAttr(group.label)} 的流量走向">${icon("route", 12)}</button>
-      <button class="conn-block" type="button" data-action="block-group" data-key="${escapeAttr(group.key)}" title="禁止整个组合联网" aria-label="禁止 ${escapeAttr(group.label)} 联网">${icon("ban", 12)}</button>
+      ${groupBlocked
+        ? `<button class="conn-unblock" type="button" data-action="unblock-group" data-key="${escapeAttr(group.key)}" title="解除整个组合的禁止规则，允许重新连接" aria-label="解除 ${escapeAttr(group.label)} 的禁止">${icon("shieldCheck", 12)}<span>解禁</span></button>`
+        : `<button class="conn-block" type="button" data-action="block-group" data-key="${escapeAttr(group.key)}" title="禁止整个组合联网" aria-label="禁止 ${escapeAttr(group.label)} 联网">${icon("ban", 12)}</button>`}
       ${group.activeCount === 0 && group.closedCount > 0 ? `<button class="conn-delete" type="button" data-action="delete-group" data-key="${escapeAttr(group.key)}" title="删除这个已断开组合的全部记录" aria-label="删除 ${escapeAttr(group.label)} 的断开记录">${icon("trash", 12)}</button>` : ""}
     </div></td>
   </tr>`;
@@ -6113,6 +6154,18 @@ function currentGroupByKey(key) {
 function groupUniqueHosts(group) {
   return [...new Set((group.items || []).map(item => connectionHostKey(item)).filter(Boolean))];
 }
+function groupBlockedEntries(group) {
+  const blocked = App.state?.blocked || [];
+  const hosts = groupUniqueHosts(group).map(value => value.toLowerCase());
+  const processes = [...(group.processes || [])].map(value => String(value).toLowerCase());
+  return blocked.filter(entry => {
+    const value = String(entry.value || "").toLowerCase();
+    if (!value) return false;
+    if (entry.type === "process") return processes.includes(value);
+    if (entry.type === "suffix") return hosts.some(host => host === value || host.endsWith("." + value));
+    return hosts.includes(value);
+  });
+}
 async function blockGroup(key) {
   const group = currentGroupByKey(key);
   if (!group) return;
@@ -6151,6 +6204,34 @@ async function blockGroup(key) {
     toast("组合已禁止联网", "success", `${result.entries?.length || 0} 条新规则 · ${result.closed || 0} 条连接已断开`, 5200);
   } catch (err) {
     toast("禁止组合失败", "error", err.message, 5000);
+  } finally {
+    setBusy(false);
+  }
+}
+async function unblockGroup(key) {
+  const group = currentGroupByKey(key);
+  if (!group) return;
+  const entries = groupBlockedEntries(group);
+  if (!entries.length) {
+    toast("这个组合当前没有被禁止", "info");
+    return;
+  }
+  const ok = await confirmDialog({
+    title: "解除组合禁止",
+    message: `将解除 <strong>${escapeHtml(group.label)}</strong> 的 <strong>${entries.length}</strong> 条禁止规则，后续连接可以重新建立。<br><br>已经断开的连接不会自动恢复，下一次请求会按正常规则重新连接。`,
+    confirmText: "解除禁止",
+    danger: false
+  });
+  if (!ok) return;
+  setBusy(true, "正在解除组合禁止…");
+  try {
+    const result = await api("/api/unblock", { method: "POST", body: { ids: entries.map(entry => entry.id) } });
+    await refreshState(true);
+    await refreshConnections();
+    if (App.page === "connections") renderConnectionsPage();
+    toast("组合已解除禁止", "success", `${result.removed || entries.length} 条规则已移除 · 可以重新连接`, 4200);
+  } catch (err) {
+    toast("解除组合禁止失败", "error", err.message, 5000);
   } finally {
     setBusy(false);
   }
@@ -6228,12 +6309,12 @@ function openBlocklistModal() {
         <strong>${escapeHtml(entry.value || "")}</strong>
         <span>${entry.type === "ip" ? "IP 地址" : entry.type === "suffix" ? "域名后缀" : entry.type === "process" ? "进程" : "精确域名"} · ${escapeHtml(dateString(entry.createdAt))}</span>
       </div>
-      <button class="block-item-remove" type="button" data-action="remove-block" data-id="${escapeAttr(entry.id || "")}" title="解除禁止">${icon("trash", 13)}</button>
+      <button class="block-item-allow" type="button" data-action="remove-block" data-id="${escapeAttr(entry.id || "")}" title="解除禁止并允许重新连接">${icon("shieldCheck", 12)}<span>解除</span></button>
     </div>`).join("");
   openModal(`
     <div class="modal">
       <div class="modal-head">
-        <div><h2>禁止规则</h2><p>这些域名或 IP 会被强制 REJECT，不会进入代理链路。</p></div>
+        <div><h2>禁止规则</h2><p>这些域名、IP 或进程会被强制 REJECT，不会进入代理链路。</p></div>
         <button class="modal-close" type="button" data-action="close-modal" aria-label="关闭">${icon("close", 13)}</button>
       </div>
       <div class="modal-body">
@@ -6639,6 +6720,9 @@ async function dispatchAction(action, el) {
       break;
     case "block-group":
       await blockGroup(el.dataset.key || "");
+      break;
+    case "unblock-group":
+      await unblockGroup(el.dataset.key || "");
       break;
     case "delete-group":
       await deleteGroupHistory(el.dataset.key || "");

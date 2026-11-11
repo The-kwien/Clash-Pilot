@@ -1114,6 +1114,42 @@ def set_console_window_visible(visible: bool) -> dict:
     return console_window_state()
 
 
+_CONSOLE_CTRL_CALLBACK = None
+_CONSOLE_CTRL_ROUTINE = None
+
+
+def install_console_shutdown_handler(callback) -> bool:
+    """Run cleanup when the CMD window is closed, logged off, or shut down.
+
+    Without a handler Windows terminates the Python process immediately and
+    leaves the child Mihomo process plus the system proxy pointing at it.
+    """
+    global _CONSOLE_CTRL_CALLBACK, _CONSOLE_CTRL_ROUTINE
+    if os.name != "nt":
+        return False
+    try:
+        HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+
+        def _handler(event: int) -> bool:
+            # CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT
+            if event in (2, 5, 6):
+                try:
+                    callback()
+                except Exception:
+                    pass
+                return True
+            return False
+
+        _CONSOLE_CTRL_CALLBACK = _handler
+        _CONSOLE_CTRL_ROUTINE = HandlerRoutine(_handler)
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleCtrlHandler.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        kernel32.SetConsoleCtrlHandler.restype = ctypes.c_int
+        return bool(kernel32.SetConsoleCtrlHandler(ctypes.cast(_CONSOLE_CTRL_ROUTINE, ctypes.c_void_p), True))
+    except Exception:
+        return False
+
+
 def windows_listener_pids(port: int) -> set[int]:
     if os.name != "nt":
         return set()
@@ -1973,18 +2009,29 @@ class Manager:
         return self.add_blocks([host])
 
     def remove_block(self, entry_id: str) -> dict:
+        result = self.remove_blocks([entry_id])
+        entries = result.get("entries") or []
+        if not entries:
+            raise ValueError("禁止规则不存在")
+        return {"entry": entries[0], "reloaded": result["reloaded"]}
+
+    def remove_blocks(self, entry_ids: list[str]) -> dict:
+        ids = {str(value) for value in entry_ids or []}
+        if not ids:
+            raise ValueError("没有要解除的禁止规则")
+        removed = []
         with self.store.lock:
             blocked = self.store.state.setdefault("blocked", [])
-            entry = next((item for item in blocked if item.get("id") == entry_id), None)
-            if not entry:
+            removed = [copy.deepcopy(entry) for entry in blocked if entry.get("id") in ids]
+            if not removed:
                 raise ValueError("禁止规则不存在")
-            self.store.state["blocked"] = [item for item in blocked if item.get("id") != entry_id]
+            self.store.state["blocked"] = [entry for entry in blocked if entry.get("id") not in ids]
             self.store.save()
         reloaded = False
         if self.core.running:
             reloaded = self.reload_core_config()
-        self.log("info", f"已移除禁止规则：{entry.get('rule', '')}")
-        return {"entry": copy.deepcopy(entry), "reloaded": reloaded}
+        self.log("info", f"已解除 {len(removed)} 条禁止规则")
+        return {"entries": removed, "removed": len(removed), "reloaded": reloaded}
 
     # -- per-connection route overrides ------------------------------------
     def get_route_overrides(self) -> list[dict]:
@@ -3835,6 +3882,15 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(str(exc)) from exc
             self.send_json(result)
             return
+        if method == "POST" and path == "/api/unblock":
+            body = self._read_body()
+            ids = body.get("ids") if isinstance(body.get("ids"), list) else []
+            try:
+                result = manager.remove_blocks([str(value) for value in ids if value])
+            except ValueError as exc:
+                raise ApiError(str(exc)) from exc
+            self.send_json(result)
+            return
         match = re.fullmatch(r"/api/block/([A-Za-z0-9_-]+)", path)
         if method == "DELETE" and match:
             try:
@@ -3967,6 +4023,7 @@ def main() -> int:
     except Exception as exc:
         print(f"初始化失败：{exc}")
         return 1
+    install_console_shutdown_handler(manager.shutdown)
     manager.start_sampler()
     threading.Thread(target=manager.boot, name="pilot-boot", daemon=True).start()
 
