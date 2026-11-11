@@ -33,7 +33,6 @@
 环境要求：Windows / macOS / Linux，Python 3.10+。
 
 ```powershell
-cd "D:\My\Create\Clash-Manager"
 python -m pip install -r requirements.txt
 python app.py
 ```
